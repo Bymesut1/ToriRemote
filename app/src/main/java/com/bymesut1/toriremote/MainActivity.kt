@@ -130,10 +130,12 @@ class MainActivity : Activity() {
         listOf("n7", "n8", "n9")
     )
 
+    private val defaultRep = 4
+
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     private fun addr() = prefs.getInt("addr", 0x00)
-    private fun repCount() = prefs.getInt("rep", 2)
+    private fun repCount() = prefs.getInt("rep", defaultRep)
     private fun cmdOf(k: Key) = prefs.getInt("cmd_" + k.id, k.def)
     private fun hex(v: Int) = String.format("%02X", v and 0xFF)
 
@@ -353,7 +355,7 @@ class MainActivity : Activity() {
             .setPositiveButton("Kaydet") { _, _ ->
                 val ed = prefs.edit()
                 ed.putInt("addr", parseHex(addrField.text.toString(), addr()))
-                ed.putInt("rep", (repField.text.toString().toIntOrNull() ?: 2).coerceIn(0, 10))
+                ed.putInt("rep", (repField.text.toString().toIntOrNull() ?: defaultRep).coerceIn(0, 10))
                 for ((k, f) in fields) ed.putInt("cmd_" + k.id, parseHex(f.text.toString(), cmdOf(k)))
                 ed.apply()
                 status.text = readyText()
