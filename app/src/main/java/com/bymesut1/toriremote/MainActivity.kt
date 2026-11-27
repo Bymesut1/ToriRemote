@@ -4,8 +4,14 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
 import android.content.SharedPreferences
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorFilter
+import android.graphics.Paint
+import android.graphics.PixelFormat
+import android.graphics.RectF
 import android.graphics.Typeface
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.hardware.ConsumerIrManager
 import android.os.Bundle
@@ -15,7 +21,6 @@ import android.text.InputType
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
-import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -26,10 +31,59 @@ import android.widget.Toast
 data class Key(
     val id: String,
     val label: String,
+    val name: String,
     val def: Int,
     val color: Int = 0xFF3A3F47.toInt(),
-    val repeat: Boolean = false
+    val repeat: Boolean = false,
+    val useRep: Boolean = false
 )
+
+/** Yuvarlak köşeli tuş zemini; power tuşuna güç simgesini çizer. */
+class KeyBg(
+    color: Int,
+    private val radiusPx: Float,
+    private val power: Boolean
+) : Drawable() {
+
+    private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val stroke = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    init {
+        fill.color = color
+        stroke.color = Color.WHITE
+        stroke.style = Paint.Style.STROKE
+        stroke.strokeCap = Paint.Cap.ROUND
+    }
+
+    override fun draw(canvas: Canvas) {
+        val rf = RectF(bounds)
+        canvas.drawRoundRect(rf, radiusPx, radiusPx, fill)
+        if (power) {
+            val cx = rf.centerX()
+            val r = rf.height() * 0.2f
+            val cy = rf.centerY() + r * 0.15f
+            stroke.strokeWidth = rf.height() * 0.075f
+            val oval = RectF(cx - r, cy - r, cx + r, cy + r)
+            canvas.drawArc(oval, -60f, 300f, false, stroke)
+            canvas.drawLine(cx, cy - r * 1.15f, cx, cy - r * 0.1f, stroke)
+        }
+    }
+
+    override fun setAlpha(alpha: Int) {
+        fill.alpha = alpha
+        stroke.alpha = alpha
+        invalidateSelf()
+    }
+
+    override fun setColorFilter(colorFilter: ColorFilter?) {
+        fill.colorFilter = colorFilter
+        stroke.colorFilter = colorFilter
+        invalidateSelf()
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+}
 
 class MainActivity : Activity() {
 
@@ -43,27 +97,27 @@ class MainActivity : Activity() {
     private val purple = 0xFF8E24AA.toInt()
 
     private val keys = listOf(
-        Key("power", "⏻", 0x45, red),
-        Key("mode", "MODE", 0x46),
-        Key("mute", "🔇", 0x47, red),
-        Key("play", "⏯", 0x44, blue),
-        Key("prev", "⏮", 0x40),
-        Key("next", "⏭", 0x43),
-        Key("eq", "EQ", 0x07, purple),
-        Key("volm", "VOL−", 0x15, repeat = true),
-        Key("volp", "VOL+", 0x09, repeat = true),
-        Key("n0", "0", 0x16),
-        Key("rpt", "RPT", 0x19),
-        Key("usb", "USB/SD", 0x0D),
-        Key("n1", "1", 0x0C),
-        Key("n2", "2", 0x18),
-        Key("n3", "3", 0x5E),
-        Key("n4", "4", 0x08),
-        Key("n5", "5", 0x1C),
-        Key("n6", "6", 0x5A),
-        Key("n7", "7", 0x42),
-        Key("n8", "8", 0x52),
-        Key("n9", "9", 0x4A)
+        Key("power", "", "GÜÇ", 0x45, red),
+        Key("mode", "MODE", "MODE", 0x46),
+        Key("mute", "🔇", "SESSİZ", 0x47, red),
+        Key("play", "⏯", "OYNAT/DURAKLAT", 0x44, blue, useRep = true),
+        Key("prev", "⏮", "ÖNCEKİ", 0x40, useRep = true),
+        Key("next", "⏭", "SONRAKİ", 0x43, useRep = true),
+        Key("eq", "EQ", "EQ", 0x07, purple, useRep = true),
+        Key("volm", "VOL−", "VOL−", 0x15, repeat = true),
+        Key("volp", "VOL+", "VOL+", 0x09, repeat = true),
+        Key("n0", "0", "0", 0x16, useRep = true),
+        Key("rpt", "RPT", "RPT", 0x19, useRep = true),
+        Key("usb", "USB/SD", "USB/SD", 0x0D, useRep = true),
+        Key("n1", "1", "1", 0x0C, useRep = true),
+        Key("n2", "2", "2", 0x18, useRep = true),
+        Key("n3", "3", "3", 0x5E, useRep = true),
+        Key("n4", "4", "4", 0x08, useRep = true),
+        Key("n5", "5", "5", 0x1C, useRep = true),
+        Key("n6", "6", "6", 0x5A, useRep = true),
+        Key("n7", "7", "7", 0x42, useRep = true),
+        Key("n8", "8", "8", 0x52, useRep = true),
+        Key("n9", "9", "9", 0x4A, useRep = true)
     )
 
     private val rows = listOf(
@@ -79,6 +133,7 @@ class MainActivity : Activity() {
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     private fun addr() = prefs.getInt("addr", 0x00)
+    private fun repCount() = prefs.getInt("rep", 2)
     private fun cmdOf(k: Key) = prefs.getInt("cmd_" + k.id, k.def)
     private fun hex(v: Int) = String.format("%02X", v and 0xFF)
 
@@ -94,6 +149,8 @@ class MainActivity : Activity() {
             setColor(color)
             cornerRadius = dp(radius).toFloat()
         }
+
+    private fun readyText() = "IR vericisi hazır • Adres 0x${hex(addr())} • Tekrar ${repCount()}"
 
     private fun buildUi() {
         val root = LinearLayout(this).apply {
@@ -119,8 +176,7 @@ class MainActivity : Activity() {
         }
         root.addView(status)
         val hasIr = ir?.hasIrEmitter() == true
-        status.text = if (hasIr) "IR vericisi hazır • Adres 0x${hex(addr())}"
-        else "Bu telefonda IR vericisi bulunamadı"
+        status.text = if (hasIr) readyText() else "Bu telefonda IR vericisi bulunamadı"
 
         val byId = keys.associateBy { it.id }
         for (r in rows) {
@@ -167,7 +223,7 @@ class MainActivity : Activity() {
         b.setTextColor(Color.WHITE)
         b.textSize = if (k.label.length > 2) 15f else 22f
         b.typeface = Typeface.DEFAULT_BOLD
-        b.background = roundBg(k.color)
+        b.background = KeyBg(k.color, dp(16).toFloat(), k.id == "power")
         if (k.repeat) {
             val repeater = object : Runnable {
                 override fun run() {
@@ -178,16 +234,26 @@ class MainActivity : Activity() {
             b.setOnTouchListener { v, e ->
                 when (e.action) {
                     MotionEvent.ACTION_DOWN -> {
+                        v.alpha = 0.6f
                         v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                         sendKey(k)
                         handler.postDelayed(repeater, 400)
                     }
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        v.alpha = 1f
                         handler.removeCallbacks(repeater)
+                    }
                 }
                 true
             }
         } else {
+            b.setOnTouchListener { v, e ->
+                when (e.action) {
+                    MotionEvent.ACTION_DOWN -> v.alpha = 0.6f
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> v.alpha = 1f
+                }
+                false
+            }
             b.setOnClickListener {
                 it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                 sendKey(k)
@@ -197,11 +263,16 @@ class MainActivity : Activity() {
     }
 
     private fun sendKey(k: Key) {
-        send(addr(), cmdOf(k))
+        val rep = if (k.useRep) repCount() else 0
+        send(addr(), cmdOf(k), rep)
+        status.text = "${k.name} • 0x${hex(cmdOf(k))} gönderildi"
     }
 
-    /** NEC protokolü, 38 kHz */
-    private fun send(address: Int, command: Int) {
+    /**
+     * NEC protokolü, 38 kHz.
+     * Önce asıl çerçeve, sonra gerçek kumanda gibi "rep" adet tekrar çerçevesi (108 ms aralıkla).
+     */
+    private fun send(address: Int, command: Int, rep: Int = 0) {
         val e = ir
         if (e == null || !e.hasIrEmitter()) {
             Toast.makeText(this, "IR vericisi yok", Toast.LENGTH_SHORT).show()
@@ -219,7 +290,13 @@ class MainActivity : Activity() {
         putByte((address and 0xFF).inv() and 0xFF)
         putByte(command and 0xFF)
         putByte((command and 0xFF).inv() and 0xFF)
-        p.add(560); p.add(20000)
+        p.add(560)
+        var used = 0
+        for (x in p) used += x
+        p.add(maxOf(108000 - used, 10000))
+        for (i in 0 until rep) {
+            p.add(9000); p.add(2250); p.add(560); p.add(96190)
+        }
         try {
             e.transmit(38000, p.toIntArray())
         } catch (ex: Exception) {
@@ -232,6 +309,13 @@ class MainActivity : Activity() {
     private fun hexField(initial: Int): EditText = EditText(this).apply {
         setText(hex(initial))
         inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+        setSingleLine()
+        gravity = Gravity.CENTER
+    }
+
+    private fun numField(initial: Int): EditText = EditText(this).apply {
+        setText(initial.toString())
+        inputType = InputType.TYPE_CLASS_NUMBER
         setSingleLine()
         gravity = Gravity.CENTER
     }
@@ -253,11 +337,13 @@ class MainActivity : Activity() {
             r.addView(field, LinearLayout.LayoutParams(dp(90), -2))
             box.addView(r)
         }
+        val repField = numField(repCount())
+        line("Tekrar (0-10)", repField)
         val addrField = hexField(addr())
         line("Adres (hex)", addrField)
         val fields = keys.map { k ->
             val f = hexField(cmdOf(k))
-            line(k.label + "  " + k.id, f)
+            line(k.name, f)
             k to f
         }
         val sv = ScrollView(this).apply { addView(box) }
@@ -267,13 +353,14 @@ class MainActivity : Activity() {
             .setPositiveButton("Kaydet") { _, _ ->
                 val ed = prefs.edit()
                 ed.putInt("addr", parseHex(addrField.text.toString(), addr()))
+                ed.putInt("rep", (repField.text.toString().toIntOrNull() ?: 2).coerceIn(0, 10))
                 for ((k, f) in fields) ed.putInt("cmd_" + k.id, parseHex(f.text.toString(), cmdOf(k)))
                 ed.apply()
-                status.text = "IR vericisi hazır • Adres 0x${hex(addr())}"
+                status.text = readyText()
             }
             .setNeutralButton("Varsayılana dön") { _, _ ->
                 prefs.edit().clear().apply()
-                status.text = "IR vericisi hazır • Adres 0x${hex(addr())}"
+                status.text = readyText()
                 Toast.makeText(this, "Varsayılan kodlar yüklendi", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("İptal", null)
@@ -283,7 +370,7 @@ class MainActivity : Activity() {
     // ---------- Kod tarama ----------
 
     private fun pickKeyForScan() {
-        val names = keys.map { it.label + "  (şu an 0x" + hex(cmdOf(it)) + ")" }.toTypedArray()
+        val names = keys.map { it.name + "  (şu an 0x" + hex(cmdOf(it)) + ")" }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle("Hangi tuşun kodunu arayalım?")
             .setItems(names) { _, i -> scanDialog(keys[i]) }
@@ -294,13 +381,14 @@ class MainActivity : Activity() {
         var cur = 0
         var running = false
         var lastSent = -1
+        val rep = if (k.useRep) repCount() else 0
 
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(10), dp(20), dp(10))
         }
         val info = TextView(this).apply {
-            text = "Telefonun üstünü hoparlöre doğrultun. Başlat'a basın; hoparlör ${k.label} tuşuna tepki verdiği anda Kaydet'e basın. ◀ ▶ ile tek tek de gezebilirsiniz."
+            text = "Telefonun üstünü hoparlöre doğrultun. Başlat'a basın; hoparlör ${k.name} tuşuna tepki verdiği anda Kaydet'e basın. ◀ ▶ ile tek tek de gezebilirsiniz."
             textSize = 14f
         }
         val tv = TextView(this).apply {
@@ -315,7 +403,7 @@ class MainActivity : Activity() {
 
         fun sendStep(c: Int) {
             lastSent = c and 0xFF
-            send(addr(), lastSent)
+            send(addr(), lastSent, rep)
             tv.text = "0x" + hex(lastSent)
         }
 
@@ -329,7 +417,7 @@ class MainActivity : Activity() {
                 }
                 sendStep(cur)
                 cur++
-                handler.postDelayed(this, 500)
+                handler.postDelayed(this, 600)
             }
         }
 
@@ -358,7 +446,7 @@ class MainActivity : Activity() {
         box.addView(row)
 
         val dialog = AlertDialog.Builder(this)
-            .setTitle("${k.label} kodunu tara • adres 0x${hex(addr())}")
+            .setTitle("${k.name} kodunu tara • adres 0x${hex(addr())}")
             .setView(box)
             .setPositiveButton("Kaydet", null)
             .setNegativeButton("Kapat", null)
@@ -369,7 +457,7 @@ class MainActivity : Activity() {
                     Toast.makeText(this, "Önce bir kod gönderin", Toast.LENGTH_SHORT).show()
                 } else {
                     prefs.edit().putInt("cmd_" + k.id, lastSent).apply()
-                    Toast.makeText(this, "${k.label} = 0x${hex(lastSent)} kaydedildi", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "${k.name} = 0x${hex(lastSent)} kaydedildi", Toast.LENGTH_SHORT).show()
                 }
             }
         }
